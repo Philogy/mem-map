@@ -62,30 +62,39 @@ library MemMapLib {
             let keyPtr := add(mapStart, keyOffset)
             storedKey := mload(keyPtr)
 
-            // Search for key, best case: O(1), worst case: O(n).
-            for {} iszero(or(iszero(storedKey), eq(storedKey, key))) {} {
-                keyOffset := and(add(keyOffset, MAP_PAIR_SPACING), offsetMask)
-                keyPtr := add(mapStart, keyOffset)
-                storedKey := mload(keyPtr)
-                // Check if we wrapped around all the way to the start.
-                if eq(keyOffset, startOffset) {
-                    mstore(0x00, 0xda4685ce /* MapFull() */ )
-                    revert(0x1c, 0x04)
+            // Optimize for immediate hit keys.
+            if iszero(eq(storedKey, key)) {
+                switch storedKey
+                case 0 {
+                    // Safe to decrement without checking because zero stored keys
+                    // indicates empty map slots.
+                    mstore(mapPtr, sub(mload(mapPtr), 1))
+                    mstore(keyPtr, key)
+                }
+                default {
+                    // Search for key, best case: O(1), worst case: O(n).
+                    for {} 1 {} {
+                        keyOffset := and(add(keyOffset, MAP_PAIR_SPACING), offsetMask)
+                        keyPtr := add(mapStart, keyOffset)
+                        storedKey := mload(keyPtr)
+                        if eq(storedKey, key) { break }
+                        if iszero(storedKey) {
+                            // Safe to decrement without checking because zero stored keys
+                            // indicates empty map slots.
+                            mstore(mapPtr, sub(mload(mapPtr), 1))
+                            mstore(keyPtr, key)
+                            break
+                        }
+                        // Check if we wrapped around all the way to the start.
+                        if eq(keyOffset, startOffset) {
+                            mstore(0x00, 0xda4685ce /* MapFull() */ )
+                            revert(0x1c, 0x04)
+                        }
+                    }
                 }
             }
 
             pairPtr := sub(keyPtr, 0x20)
-
-            // Check if we're using a fresh slot in our map.
-            if iszero(storedKey) {
-                let remainingCapacity := mload(mapPtr)
-                if iszero(remainingCapacity) {
-                    mstore(0x00, 0xda4685ce /* MapFull() */ )
-                    revert(0x1c, 0x04)
-                }
-                mstore(mapPtr, sub(remainingCapacity, 1))
-                mstore(keyPtr, key)
-            }
         }
     }
 
@@ -141,8 +150,7 @@ library MemMapLib {
         /// @solidity memory-safe-assembly
         assembly {
             let offsetMask := and(map, CAPACITY_MASK)
-            let mapPtr := shr(32, map)
-            let mapStart := add(mapPtr, 0x40)
+            let mapStart := add(shr(32, map), 0x40)
 
             let startOffset := and(key, offsetMask)
             let keyOffset := startOffset
@@ -152,7 +160,6 @@ library MemMapLib {
             // Optimize for immediate hit keys.
             if iszero(eq(storedKey, key)) {
                 if storedKey {
-                    // Search for key, best case: O(1), worst case: O(n).
                     for {} 1 {} {
                         keyOffset := and(add(keyOffset, MAP_PAIR_SPACING), offsetMask)
                         keyPtr := add(mapStart, keyOffset)

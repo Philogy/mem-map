@@ -2,7 +2,7 @@
 pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {MemMap, MemMapLib} from "../src/MemMapLib.sol";
+import {MemMap, MemMapLib, mapPairPtr} from "../src/MemMapLib.sol";
 
 /// @author philogy <https://github.com/philogy>
 contract MemMapTest is Test {
@@ -11,24 +11,67 @@ contract MemMapTest is Test {
     }
 
     function test_fuzzingSingleSetAndGet(bytes32 seed, bytes32 key, uint256 value) public {
-        vm.pauseGasMetering();
         vm.assume(key != bytes32(0));
-        _brutalize(seed);
+        _brutalize(seed, 16);
 
         // 8-bit capacity => 256
         MemMap map = MemMapLib.alloc(3);
 
-        bytes32[10] memory above;
-        for (uint256 i = 0; i < 10; i++) {
-            above[i] = _hash(seed, i);
-        }
-        vm.resumeGasMetering();
-
-        vm.breakpoint("a");
+        seed = _brutalize(seed, 16);
 
         assertEq(map.get(key), 0, "incorrect default value");
         map.set(key, value);
         assertEq(map.get(key), value, "value not set");
+    }
+
+    function test_fuzzingSetViaPairPtr(bytes32 seed, bytes32 key, uint256 value) public {
+        vm.assume(key != bytes32(0));
+        _brutalize(seed, 16);
+
+        // 8-bit capacity => 256
+        MemMap map = MemMapLib.alloc(3);
+
+        seed = _brutalize(seed, 16);
+
+        (mapPairPtr ptr, bytes32 storedKey) = map.getPairPtr(key);
+        (mapPairPtr refetchedPtr, bytes32 newStoredKey) = map.getPairPtr(key);
+        assertEq(mapPairPtr.unwrap(ptr), mapPairPtr.unwrap(refetchedPtr), "refetchedPtr not equal to original pointer");
+        assertEq(newStoredKey, key, "Stored key wasn't updated by getPairPtr");
+        assertEq(storedKey, bytes32(0), "default stored key not 0");
+        ptr.set(value);
+        assertEq(ptr.get(), value, "pointer did not return stored value");
+        (refetchedPtr, newStoredKey) = map.getPairPtr(key);
+        assertEq(
+            mapPairPtr.unwrap(ptr),
+            mapPairPtr.unwrap(refetchedPtr),
+            "refetchedPtr not equal to original pointer after set"
+        );
+        assertEq(newStoredKey, key, "Stored key incorrect after set");
+        assertEq(map.get(key), value, "Direct get returned incorrect value");
+    }
+
+    function test_revertsIfSetAndMapFull() public {
+        uint256 bits = 2;
+        MemMap map = MemMapLib.alloc(bits);
+
+        for (uint256 i = 0; i < (1 << bits); i++) {
+            map.set(bytes32(1 << i), i);
+        }
+
+        vm.expectRevert(MemMapLib.MapFull.selector);
+        map.set("lmao", 34);
+    }
+
+    function test_revertsIfGetAndMapFull() public {
+        uint256 bits = 2;
+        MemMap map = MemMapLib.alloc(bits);
+
+        for (uint256 i = 0; i < (1 << bits); i++) {
+            map.set(bytes32(1 << i), i);
+        }
+
+        vm.expectRevert(MemMapLib.MapFull.selector);
+        map.get("lmao");
     }
 
     function test_collidingKeys() public {
@@ -102,18 +145,34 @@ contract MemMapTest is Test {
         emit log_named_uint("used", g0 - g1);
     }
 
-    function _brutalize(bytes32 seed) internal pure {
+    function test_gasUsed_singlePointerGet() public {
+        // 8-bit capacity => 256
+        MemMap map = MemMapLib.alloc(8);
+
+        bytes32 key = keccak256("key");
+        map.set(key, 34);
+
+        uint256 g0 = gasleft();
+        map.getPairPtr(key);
+        uint256 g1 = gasleft();
+
+        emit log_named_uint("used", g0 - g1);
+    }
+
+    function _brutalize(bytes32 seed, uint256 freeWords) internal pure returns (bytes32) {
         /// @solidity memory-safe-assembly
         assembly {
             mstore(0x00, seed)
             mstore(0x20, not(seed))
 
-            for { let offset := mload(0x40) } lt(offset, mul(16, 0x20)) { offset := add(offset, 0x20) } {
-                let nextRand := keccak256(0x00, 0x20)
-                mstore(0x00, nextRand)
-                mstore(offset, nextRand)
+            for { let offset := mload(0x40) } lt(offset, mul(freeWords, 0x20)) { offset := add(offset, 0x20) } {
+                seed := keccak256(0x00, 0x20)
+                mstore(0x00, seed)
+                mstore(offset, seed)
             }
         }
+
+        return seed;
     }
 
     function _hash(bytes32 seed, uint256 i) internal pure returns (bytes32 hash) {
