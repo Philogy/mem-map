@@ -46,7 +46,14 @@ library MemMapLib {
     function capacity(MemMap map) internal pure returns (uint256 capacity_) {
         /// @solidity memory-safe-assembly
         assembly {
-            capacity_ := and(map, CAPACITY_MASK)
+            capacity_ := add(shr(6, and(map, CAPACITY_MASK)), 1)
+        }
+    }
+
+    function remainingCapacity(MemMap map) internal pure returns (uint256 rem) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            rem := mload(shl(32, map))
         }
     }
 

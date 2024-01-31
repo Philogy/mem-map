@@ -90,9 +90,23 @@ contract MemMapTest is Test {
         assertEq(map.get(key2), value2);
     }
 
+    function test_gasUsed_alloc16() public {
+        uint256 g0 = gasleft();
+        MemMapLib.alloc(4);
+        uint256 g1 = gasleft();
+        emit log_named_uint("used", g0 - g1);
+    }
+
     function test_gasUsed_alloc32() public {
         uint256 g0 = gasleft();
         MemMapLib.alloc(5);
+        uint256 g1 = gasleft();
+        emit log_named_uint("used", g0 - g1);
+    }
+
+    function test_gasUsed_alloc64() public {
+        uint256 g0 = gasleft();
+        MemMapLib.alloc(6);
         uint256 g1 = gasleft();
         emit log_named_uint("used", g0 - g1);
     }
