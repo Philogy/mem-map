@@ -159,6 +159,35 @@ contract MemMapTest is Test {
         emit log_named_uint("used", g0 - g1);
     }
 
+    function test_gasUsed_setViaPointer() public {
+        // 8-bit capacity => 256
+        MemMap map = MemMapLib.alloc(8);
+
+        bytes32 key = keccak256("key");
+        (mapPairPtr ptr,) = map.getPairPtr(key);
+
+        uint256 g0 = gasleft();
+        ptr.set(21);
+        uint256 g1 = gasleft();
+
+        emit log_named_uint("used", g0 - g1);
+    }
+
+    function test_gasUsed_getViaPointer() public {
+        // 8-bit capacity => 256
+        MemMap map = MemMapLib.alloc(8);
+
+        bytes32 key = keccak256("key");
+        (mapPairPtr ptr,) = map.getPairPtr(key);
+        ptr.set(34);
+
+        uint256 g0 = gasleft();
+        ptr.get();
+        uint256 g1 = gasleft();
+
+        emit log_named_uint("used", g0 - g1);
+    }
+
     function _brutalize(bytes32 seed, uint256 freeWords) internal pure returns (bytes32) {
         /// @solidity memory-safe-assembly
         assembly {
