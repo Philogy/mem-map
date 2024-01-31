@@ -31,6 +31,22 @@ contract MemMapTest is Test {
         assertEq(map.get(key), value, "value not set");
     }
 
+    function test_collidingKeys() public {
+        bytes32 key1 = bytes32(uint256((1 << 6) + 1));
+        uint256 value1 = 34;
+        bytes32 key2 = bytes32(uint256((1 << 6) + 2));
+        uint256 value2 = 3987;
+
+        MemMap map = MemMapLib.alloc(3);
+        map.set(key1, value1);
+        vm.breakpoint("c");
+
+        map.set(key2, value2);
+
+        assertEq(map.get(key1), value1);
+        assertEq(map.get(key2), value2);
+    }
+
     function test_gasUsed_alloc32() public {
         uint256 g0 = gasleft();
         MemMapLib.alloc(5);
